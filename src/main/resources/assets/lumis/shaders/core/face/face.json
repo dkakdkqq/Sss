@@ -1,0 +1,20 @@
+{
+  "vertex": "lumis:core/face/face",
+  "fragment": "lumis:core/face/face",
+  "samplers": [
+    { "name": "Sampler0" }
+  ],
+  "uniforms": [
+    { "name": "ModelViewMat", "type": "matrix4x4", "count": 16, "values": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0] },
+    { "name": "ProjMat", "type": "matrix4x4", "count": 16, "values": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0] },
+    { "name": "location", "type": "float", "count": 2, "values": [0.0, 0.0] },
+    { "name": "size", "type": "float", "count": 2, "values": [0.0, 0.0] },
+    { "name": "radius", "type": "float", "count": 1, "values": [0.0] },
+    { "name": "alpha", "type": "float", "count": 1, "values": [1.0] },
+    { "name": "u", "type": "float", "count": 1, "values": [0.0] },
+    { "name": "v", "type": "float", "count": 1, "values": [0.0] },
+    { "name": "w", "type": "float", "count": 1, "values": [1.0] },
+    { "name": "h", "type": "float", "count": 1, "values": [1.0] },
+    { "name": "hurtPercent", "type": "float", "count": 1, "values": [0.0] }
+  ]
+}

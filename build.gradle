@@ -1,0 +1,106 @@
+plugins {
+	id 'net.fabricmc.fabric-loom-remap' version "${loom_version}"
+	id 'maven-publish'
+}
+
+version = project.mod_version
+group = project.maven_group
+
+configurations {
+	shade
+}
+
+def baritoneJar = file("libs/baritone-standalone-fabric-1.13.1.jar")
+def baritoneApiJar = file("libs/baritone-api-fabric-1.13.1.jar")
+def netherPathfinderJar = file("libs/nether-pathfinder-1.4.1.jar")
+
+base {
+	archivesName = project.archives_base_name
+}
+
+repositories {
+}
+
+dependencies {
+	    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+	    mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
+	    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+		modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+		modLocalRuntime files(baritoneJar)
+		implementation files(netherPathfinderJar)
+		shade files(netherPathfinderJar)
+		implementation files("libs/jna-5.15.0.jar")
+		shade files("libs/jna-5.15.0.jar")
+	    compileOnly 'org.projectlombok:lombok:1.18.44'
+	    annotationProcessor 'org.projectlombok:lombok:1.18.44'
+}
+
+processResources {
+	inputs.property "version", project.version
+
+	filesMatching("fabric.mod.json") {
+		expand "version": inputs.properties.version
+	}
+}
+
+tasks.withType(JavaCompile).configureEach {
+	it.options.release = 21
+	it.options.encoding = "UTF-8"
+}
+
+loom {
+	accessWidenerPath = file("src/main/resources/lumis.accesswidener")
+}
+
+// Final built mod jar name -> "LumisBeta 1.0.jar"
+remapJar {
+	archiveFileName = "LumisBeta 1.0.jar"
+}
+
+java {
+	withSourcesJar()
+
+	sourceCompatibility = JavaVersion.VERSION_21
+	targetCompatibility = JavaVersion.VERSION_21
+}
+
+jar {
+	inputs.property "archivesName", project.base.archivesName
+	duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+	doFirst {
+		if (!baritoneJar.exists()) {
+			throw new GradleException("Missing nested Baritone jar: ${baritoneJar}")
+		}
+		if (!netherPathfinderJar.exists()) {
+			throw new GradleException("Missing nether-pathfinder jar: ${netherPathfinderJar}")
+		}
+	}
+
+	from {
+		configurations.shade.collect { dependency ->
+			dependency.isDirectory() ? dependency : zipTree(dependency)
+		}
+	}
+
+	from(baritoneJar) {
+		into "META-INF/jars"
+	}
+
+	exclude("META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA")
+
+	from("LICENSE") {
+		rename { "${it}_${inputs.properties.archivesName}"}
+	}
+}
+
+publishing {
+	publications {
+		create("mavenJava", MavenPublication) {
+			artifactId = project.archives_base_name
+			from components.java
+		}
+	}
+
+	repositories {
+	}
+}

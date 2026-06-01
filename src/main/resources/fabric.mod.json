@@ -1,0 +1,36 @@
+{
+	"schemaVersion": 1,
+	"id": "lumis",
+	"version": "${version}",
+	"name": "lumis",
+	"description": "best dlc",
+	"authors": [
+		"whylol, prince"
+	],
+	"contact": {
+		"homepage": "https://fabricmc.net/",
+		"sources": "https://github.com/FabricMC/fabric-example-mod"
+	},
+	"license": "CC0-1.0",
+	"icon": "assets/lumis/icon.png",
+	"environment": "*",
+	"jars": [
+		{
+			"file": "META-INF/jars/baritone-standalone-fabric-1.13.1.jar"
+		}
+	],
+	"entrypoints": {
+		"main": [
+			"fun.lumis.Lumis::INSTANCE"
+		]
+	},
+	"mixins": [
+		"lumis.mixins.json"
+	],
+	"depends": {
+		"fabricloader": ">=0.18.4",
+		"minecraft": "~1.21.4",
+		"java": ">=21",
+		"fabric-api": "*"
+	}
+}

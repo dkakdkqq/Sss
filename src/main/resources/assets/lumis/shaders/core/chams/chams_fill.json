@@ -1,0 +1,15 @@
+{
+  "vertex": "lumis:core/position_texture_color",
+  "fragment": "lumis:core/chams/chams_fill",
+  "samplers": [],
+  "uniforms": [
+    { "name": "ModelViewMat", "type": "matrix4x4", "count": 16, "values": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0] },
+    { "name": "ProjMat", "type": "matrix4x4", "count": 16, "values": [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0] },
+    { "name": "time", "type": "float", "count": 1, "values": [0.0] },
+    { "name": "speedX", "type": "float", "count": 1, "values": [0.22] },
+    { "name": "speedY", "type": "float", "count": 1, "values": [0.15] },
+    { "name": "scale", "type": "float", "count": 1, "values": [1.35] },
+    { "name": "density", "type": "float", "count": 1, "values": [1.15] },
+    { "name": "glowStrength", "type": "float", "count": 1, "values": [1.0] }
+  ]
+}
