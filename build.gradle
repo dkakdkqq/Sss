@@ -1,7 +1,12 @@
+
+
+
 plugins {
 	id 'net.fabricmc.fabric-loom-remap' version "${loom_version}"
 	id 'maven-publish'
 }
+
+import lumis.obf.Obfuscator
 
 version = project.mod_version
 group = project.maven_group
@@ -55,6 +60,27 @@ loom {
 // Final built mod jar name -> "LumisBeta 1.0.jar"
 remapJar {
 	archiveFileName = "LumisBeta 1.0.jar"
+
+	// Obfuscate the final remapped mod jar in place, after loom produces it.
+	// Enable with -Pobfuscate (kept off for dev builds / runClient so names stay debuggable).
+	if (project.hasProperty("obfuscate")) {
+		def hierarchyCp = files(
+			configurations.compileClasspath,
+			baritoneJar,
+			netherPathfinderJar,
+			file("libs/jna-5.15.0.jar")
+		)
+		// The obfuscation runs in doLast and mutates the jar after Gradle's up-to-date check,
+		// so force the task to always re-run when obfuscating (otherwise a cached remapJar
+		// leaves a stale, un-obfuscated jar on disk).
+		outputs.upToDateWhen { false }
+		doLast {
+			def out = archiveFile.get().asFile
+			def seed = project.hasProperty("obfSeed") ? (project.obfSeed as long) : 1L
+			logger.lifecycle("[obf] obfuscating ${out.name}")
+			new Obfuscator(seed).run(out, out, new ArrayList<File>(hierarchyCp.files))
+		}
+	}
 }
 
 java {
