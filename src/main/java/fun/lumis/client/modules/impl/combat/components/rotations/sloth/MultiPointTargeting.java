@@ -27,12 +27,16 @@ public class MultiPointTargeting implements QClient {
      * горизонтали/глубине, prior — априорный (базовый) вес области.
      */
     public enum Region {
-        HEAD(0.90, 0.16, 0.16, 0.85),
-        UPPER_TORSO(0.74, 0.26, 0.24, 1.00),
-        LOWER_TORSO(0.58, 0.30, 0.28, 0.95),
-        LEFT_ARM(0.66, 0.42, 0.20, 0.55),
-        RIGHT_ARM(0.66, 0.42, 0.20, 0.55),
-        LEGS(0.30, 0.24, 0.24, 0.45);
+        HEAD(0.93, 0.14, 0.14, 0.80),
+        FACE(0.84, 0.18, 0.18, 0.78),
+        UPPER_TORSO(0.72, 0.28, 0.26, 1.00),
+        MID_TORSO(0.60, 0.32, 0.30, 1.00),
+        LOWER_TORSO(0.48, 0.30, 0.28, 0.92),
+        LEFT_ARM(0.66, 0.44, 0.20, 0.55),
+        RIGHT_ARM(0.66, 0.44, 0.20, 0.55),
+        LEFT_LEG(0.26, 0.22, 0.22, 0.48),
+        RIGHT_LEG(0.26, 0.22, 0.22, 0.48),
+        FEET(0.08, 0.20, 0.20, 0.32);
 
         public final double yFrac;
         public final double spreadX;
@@ -155,7 +159,11 @@ public class MultiPointTargeting implements QClient {
             double seed = System.currentTimeMillis() / 70.0 + target.getId() * 1.7 + i * 2.3;
             double lateral = Math.sin(seed * 0.83) * region.spreadX;
             double depthOff = Math.cos(seed * 1.27) * region.spreadZ;
-            double sideBias = region == Region.LEFT_ARM ? -0.55 : region == Region.RIGHT_ARM ? 0.55 : 0.0;
+            double sideBias = switch (region) {
+                case LEFT_ARM, LEFT_LEG -> -0.55;
+                case RIGHT_ARM, RIGHT_LEG -> 0.55;
+                default -> 0.0;
+            };
 
             // Удерживаем точку ВНУТРИ хитбокса (не у самой кромки): после добавления шума и
             // микро-отвода прицел иначе уходит за полигон цели — это банит ротационный анти-чит.

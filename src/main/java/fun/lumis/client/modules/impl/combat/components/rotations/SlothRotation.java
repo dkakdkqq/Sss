@@ -1,6 +1,7 @@
 package fun.lumis.client.modules.impl.combat.components.rotations;
 
 import net.minecraft.entity.LivingEntity;
+import net.minecraft.util.math.Box;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import fun.lumis.api.QClient;
@@ -396,12 +397,11 @@ public class SlothRotation extends RotationsSystem implements QClient {
         smoothYaw = smoothLerp(smoothYaw, currentYaw, smoothFactor);
         smoothPitch = smoothLerp(smoothPitch, currentPitch, smoothFactor * 0.95F);
 
-        // --- Компонент 3: микро-отводы (Target Desynchronization) ---
-        float[] dev = desync.update(target, distance, true);
+        // --- Компонент 3: отвод от хитбокса (Target Desynchronization) ---
+        // desync возвращает смещение в ДОЛЯХ углового полуразмера цели (-1..+1, ±1 = кромка).
+        float[] devFrac = desync.update(target, true);
 
-        // Итоговое отклонение (шум + микро-отвод) ограничиваем долей УГЛОВОГО размера цели,
-        // чтобы прицел гарантированно оставался ВНУТРИ хитбокса на любой дистанции
-        // (фиксированный шум в градусах на расстоянии выходит за маленький угловой хитбокс).
+        // Угловой полуразмер цели (в градусах) на текущей дистанции.
         var box = target.getBoundingBox();
         float halfW = (float) Math.max(0.3, (box.maxX - box.minX) * 0.5);
         float halfH = (float) Math.max(0.4, (box.maxY - box.minY) * 0.5);
@@ -409,11 +409,36 @@ public class SlothRotation extends RotationsSystem implements QClient {
         float angHalfYaw = (float) Math.toDegrees(Math.atan2(halfW, dd));
         float angHalfPitch = (float) Math.toDegrees(Math.atan2(halfH, dd));
 
-        float devYaw = MathHelper.clamp(noise[0] + dev[0], -angHalfYaw * 0.4F, angHalfYaw * 0.4F);
-        float devPitch = MathHelper.clamp(noise[1] + dev[1], -angHalfPitch * 0.4F, angHalfPitch * 0.4F);
+        // Отвод доводим почти до самой кромки (0.92 полуразмера), шум — небольшая доля сверху.
+        float devYaw = devFrac[0] * angHalfYaw * 0.92F + noise[0] * 0.35F;
+        float devPitch = devFrac[1] * angHalfPitch * 0.92F + noise[1] * 0.35F;
 
         float outY = smoothYaw + devYaw;
         float outP = MathHelper.clamp(smoothPitch + devPitch, -89.0F, 89.0F);
+
+        // --- Гарант попадания: луч взгляда обязан пересекать коробку цели в момент атаки. ---
+        // Предсказанная коробка (та же упреждённая позиция, что и точка наведения).
+        Box predictedBox = box.offset(predictedCenter.subtract(box.getCenter()));
+        if (!rayHitsBox(eyePos, outY, outP, predictedBox)) {
+            // Отвод вывел прицел за полигон — подтягиваем его обратно к базовой ротации
+            // (smoothYaw/smoothPitch заведомо на точке наведения внутри хитбокса), пока
+            // луч снова не окажется внутри. Доводка бинарная, до 6 шагов => плавно.
+            float blend = 0.5F;
+            for (int i = 0; i < 6; i++) {
+                float tryY = outY + MathHelper.wrapDegrees(smoothYaw - outY) * blend;
+                float tryP = MathHelper.clamp(outP + (smoothPitch - outP) * blend, -89.0F, 89.0F);
+                if (rayHitsBox(eyePos, tryY, tryP, predictedBox)) {
+                    outY = tryY;
+                    outP = tryP;
+                    break;
+                }
+                blend = Math.min(1.0F, blend + 0.18F);
+                if (i == 5) {
+                    outY = smoothYaw;
+                    outP = MathHelper.clamp(smoothPitch, -89.0F, 89.0F);
+                }
+            }
+        }
 
         outY -= (outY - lastSentYaw) % gcd;
         outP -= (outP - lastSentPitch) % gcd;
@@ -422,5 +447,42 @@ public class SlothRotation extends RotationsSystem implements QClient {
         lastSentPitch = outP;
 
         RotationStorage.update(new Rotation(outY, outP), 360.0F, 45.0F, 45.0F, 45.0F, 0, 1, Aura.clientLook.isState());
+    }
+
+    /** Пересекает ли луч из {@code eye} под углами (yaw,pitch) коробку {@code box} (slab-метод). */
+    private static boolean rayHitsBox(Vec3d eye, float yaw, float pitch, Box box) {
+        float f = pitch * 0.017453292F;
+        float g = -yaw * 0.017453292F;
+        float ch = MathHelper.cos(g);
+        float sh = MathHelper.sin(g);
+        float cp = MathHelper.cos(f);
+        float sp = MathHelper.sin(f);
+        Vec3d dir = new Vec3d(sh * cp, -sp, ch * cp);
+
+        double tmin = 0.0;
+        double tmax = Double.MAX_VALUE;
+        double[] o = {eye.x, eye.y, eye.z};
+        double[] d = {dir.x, dir.y, dir.z};
+        double[] mn = {box.minX, box.minY, box.minZ};
+        double[] mx = {box.maxX, box.maxY, box.maxZ};
+
+        for (int i = 0; i < 3; i++) {
+            if (Math.abs(d[i]) < 1.0E-8) {
+                if (o[i] < mn[i] || o[i] > mx[i]) return false;
+            } else {
+                double inv = 1.0 / d[i];
+                double t1 = (mn[i] - o[i]) * inv;
+                double t2 = (mx[i] - o[i]) * inv;
+                if (t1 > t2) {
+                    double tmp = t1;
+                    t1 = t2;
+                    t2 = tmp;
+                }
+                if (t1 > tmin) tmin = t1;
+                if (t2 < tmax) tmax = t2;
+                if (tmin > tmax) return false;
+            }
+        }
+        return true;
     }
 }

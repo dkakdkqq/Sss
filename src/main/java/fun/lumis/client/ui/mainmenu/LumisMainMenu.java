@@ -14,18 +14,20 @@ import net.minecraft.client.gui.screen.option.OptionsScreen;
 import net.minecraft.client.gui.screen.world.SelectWorldScreen;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.text.Text;
+import net.minecraft.util.Identifier;
 
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Кастомное главное меню Lumis: логотип на фоне (слева) и колонка кнопок справа
+ * Главное меню Lumis: фоновое изображение во весь экран и колонка кнопок по центру
  * (SinglePlayer, MultiPlayer, AltManager, Settings, Quit).
  */
 public class LumisMainMenu extends Screen implements QClient {
 
+    private static final Identifier BACKGROUND_TEXTURE = Identifier.of("lumis", "textures/mainmenu/mainmenufon.png");
+
     private static final int ACCENT_LEFT = 0xFF8A6CFF;
-    private static final int ACCENT_RIGHT = 0xFF4FC3F7;
     private static final int TEXT = 0xFFFFFFFF;
     private static final int SUBTEXT = 0xFF9A9AA8;
     private static final int BTN_BG = 0xFF181820;
@@ -54,7 +56,7 @@ public class LumisMainMenu extends Screen implements QClient {
     private void layoutButtons() {
         float totalH = buttons.size() * BTN_H + (buttons.size() - 1) * BTN_GAP;
         float startY = (height - totalH) / 2f;
-        float x = width - 60f - BTN_W;
+        float x = (width - BTN_W) / 2f;
         for (int i = 0; i < buttons.size(); i++) {
             MenuButton b = buttons.get(i);
             b.x = x;
@@ -66,7 +68,7 @@ public class LumisMainMenu extends Screen implements QClient {
 
     @Override
     public void renderBackground(DrawContext context, int mouseX, int mouseY, float delta) {
-        // Собственный фон рисуется в render().
+        // Фон рисуется в render().
     }
 
     @Override
@@ -74,19 +76,13 @@ public class LumisMainMenu extends Screen implements QClient {
         MatrixStack ms = context.getMatrices();
         layoutButtons();
 
-        // Фон (рисуем немедленно через RenderUtils — context.fillGradient буферизуется и
-        // отрисовывается ПОСЛЕ кадра, перекрывая немедленные draw-вызовы кнопок/панелей)
-        RenderUtils.drawGradientRect(ms, 0, 0, width, height, 0xFF12121A, 0xFF070709);
+        // Фоновое изображение на весь экран
+        RenderUtils.drawImage(ms, BACKGROUND_TEXTURE, 0, 0, width, height, 0xFFFFFFFF);
 
-        // Мягкое свечение-акцент за логотипом
-        float glowX = width * 0.26f;
-        float glowY = height * 0.5f;
-        RenderUtils.drawShadow(ms, glowX - 120f, glowY - 60f, 240f, 120f, 60f, 90f, 0x338A6CFF);
+        // Затемнение поверх фона для читаемости кнопок
+        RenderUtils.drawGradientRect(ms, 0, 0, width, height, 0x88000000, 0x88000000);
 
-        // Логотип
-        renderLogo(ms);
-
-        // Кнопки
+        // Кнопки по центру
         for (MenuButton b : buttons) {
             renderButton(ms, b, mouseX, mouseY, delta);
         }
@@ -98,30 +94,6 @@ public class LumisMainMenu extends Screen implements QClient {
         }
 
         super.render(context, mouseX, mouseY, delta);
-    }
-
-    private void renderLogo(MatrixStack ms) {
-        float logoX = width * 0.10f;
-        float logoCenterY = height * 0.46f;
-
-        Font logoFont = font(82);
-        if (logoFont != null) {
-            // Тень
-            logoFont.drawString(ms, "lumis", logoX + 3f, logoCenterY - logoFont.getHeight() / 4f + 3f, 0x66000000);
-            // Градиентный логотип
-            logoFont.drawGradientStringHorizontal(ms, "lumis", logoX, logoCenterY - logoFont.getHeight() / 4f, ACCENT_LEFT, ACCENT_RIGHT);
-
-            // Акцентная линия под логотипом
-            float lineY = logoCenterY + logoFont.getHeight() / 4f + 10f;
-            float lineW = logoFont.getStringWidth("lumis");
-            RenderUtils.drawRoundedRect(ms, logoX + 2f, lineY, lineW * 0.62f, 3f, 1.5f, ACCENT_LEFT);
-
-            // Подзаголовок
-            Font tag = font(16);
-            if (tag != null) {
-                drawV(tag, ms, "next-gen utility client", logoX + 3f, lineY + 16f, SUBTEXT);
-            }
-        }
     }
 
     private void renderButton(MatrixStack ms, MenuButton b, int mouseX, int mouseY, float delta) {

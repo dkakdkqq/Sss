@@ -61,6 +61,8 @@ import fun.lumis.client.modules.impl.combat.components.RotationsSystem;
 import fun.lumis.client.modules.impl.combat.components.interpolation.BestPoint;
 import fun.lumis.client.modules.impl.combat.components.rotations.SlothRotation;
 import fun.lumis.client.modules.impl.combat.components.rotations.ReallyWorldRotation;
+import fun.lumis.client.modules.impl.combat.components.rotations.PolarRotation;
+import fun.lumis.client.modules.impl.combat.components.rotations.SpookyDuelRotation;
 import fun.lumis.client.modules.impl.movement.Sprint;
 import fun.lumis.client.modules.impl.player.AutoEat;
 import fun.lumis.client.modules.settings.implement.BooleanSetting;
@@ -78,7 +80,7 @@ import static net.minecraft.util.math.MathHelper.wrapDegrees;
 public class Aura extends Module {
     public static Aura INSTANCE = new Aura();
 
-    public final ModeSetting rotationType = new ModeSetting("Ротация", "SlothAC", "SlothAC", "ReallyWorld");
+    public final ModeSetting rotationType = new ModeSetting("Ротация", "Sloth", "Sloth", "ReallyWorld", "Polar", "SpookyDuel");
 
     private final ListSetting targets = new ListSetting("Таргеты",
             new BooleanSetting("Игроки", true),
@@ -116,6 +118,8 @@ public class Aura extends Module {
     private final BooleanSetting rwWallLookDown = new BooleanSetting("Смотреть вниз", false).visible(rwWallBypass::isState);
     private final SlothRotation slothRotation = new SlothRotation();
     private final ReallyWorldRotation reallyWorldRotation = new ReallyWorldRotation();
+    private final PolarRotation polarRotation = new PolarRotation();
+    private final SpookyDuelRotation spookyDuelRotation = new SpookyDuelRotation();
 
     private final TimerUtils backTimer = new TimerUtils();
 
@@ -399,6 +403,16 @@ public class Aura extends Module {
 
         if (rotationType.is("ReallyWorld")) {
             reallyWorldRotation.updateRotations(target);
+            return;
+        }
+
+        if (rotationType.is("Polar")) {
+            polarRotation.updateRotations(target);
+            return;
+        }
+
+        if (rotationType.is("SpookyDuel")) {
+            spookyDuelRotation.updateRotations(target);
             return;
         }
 
@@ -693,8 +707,10 @@ public class Aura extends Module {
             restoreShieldBlocking(blockedShieldHand);
         }
 
-        if (rotationType.is("SlothAC")) slothRotation.onAttack();
+        if (rotationType.is("Sloth")) slothRotation.onAttack();
         if (rotationType.is("ReallyWorld")) reallyWorldRotation.onAttack();
+        if (rotationType.is("Polar")) polarRotation.onAttack();
+        if (rotationType.is("SpookyDuel")) spookyDuelRotation.onAttack();
 
         long cooldown = 467L;
 

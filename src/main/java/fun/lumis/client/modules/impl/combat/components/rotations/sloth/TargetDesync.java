@@ -2,68 +2,72 @@ package fun.lumis.client.modules.impl.combat.components.rotations.sloth;
 
 import fun.lumis.api.QClient;
 import net.minecraft.entity.LivingEntity;
-import net.minecraft.util.math.Box;
 import net.minecraft.util.math.MathHelper;
 
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
- * Система микро-отводов (Target Desynchronization).
+ * Отвод от хитбокса (Target Desynchronization).
  *
- * <p>Периодически и кратковременно уводит вектор направления за пределы основного полигона
- * цели, после чего плавно возвращает его обратно (на одну из точек многоточечного наведения).</p>
+ * <p>Периодически и кратковременно уводит вектор прицела к кромке полигона цели (а при
+ * желании — впритык к ней), держит его там короткое время, после чего плавно возвращает
+ * на одну из точек многоточечного наведения.</p>
+ *
+ * <p>Ключевое отличие от наивного «шума в градусах»: смещение выражается в ДОЛЯХ углового
+ * полуразмера цели ({@code -1..+1}, где {@code ±1} — ровно кромка хитбокса), а перевод в
+ * градусы и финальный гарант «луч всё ещё пересекает коробку» делаются на стороне ротации
+ * ({@link fun.lumis.client.modules.impl.combat.components.rotations.SlothRotation}).
+ * Поэтому отвод одинаково «доходит до края» на любой дистанции и не зависит от того,
+ * насколько мал угловой размер цели.</p>
  *
  * <ul>
- *   <li><b>Длительность увода:</b> случайное значение 10–200 мс.</li>
- *   <li><b>Направление увода:</b> случайный вектор смещения относительно границ цели —
- *       магнитуда рассчитывается так, чтобы вектор вышел за пределы bounding box.</li>
- *   <li><b>Частота:</b> интервалы между отводами рассчитываются динамически (несоизмеримый
- *       джиттер), чтобы исключить периодичность.</li>
+ *   <li><b>Магнитуда:</b> до ~0.96 полуразмера (у самой кромки), направление случайное;</li>
+ *   <li><b>Фазы:</b> резкий уход (DEVIATE) → удержание у кромки (HOLD) → плавный возврат (RETURN);</li>
+ *   <li><b>Тайминги:</b> уход 40–160 мс, удержание 0–90 мс, возврат 70–220 мс;</li>
+ *   <li><b>Частота:</b> апериодичный интервал между отводами (несоизмеримый джиттер).</li>
  * </ul>
- *
- * <p>Возвращает накопленное смещение углов (Yaw/Pitch), которое накладывается поверх базовой
- * ротации. В фазе возврата смещение плавно сводится к нулю, и базовая ротация (нацеленная на
- * выбранную точку п.1) восстанавливается.</p>
  */
 public class TargetDesync implements QClient {
 
     private enum Phase {
         IDLE,     // ожидание следующего отвода
-        DEVIATE,  // активный увод за пределы цели
+        DEVIATE,  // активный уход к кромке хитбокса
+        HOLD,     // короткое удержание у кромки
         RETURN    // плавный возврат на точку наведения
     }
 
     private Phase phase = Phase.IDLE;
 
     private long phaseStart;
-    private int deviateDurationMs;   // 10..200 мс
-    private int returnDurationMs;    // длительность плавного возврата
+    private int deviateDurationMs;
+    private int holdDurationMs;
+    private int returnDurationMs;
 
     private long lastCycleEnd;
-    private long nextIntervalMs;     // динамический интервал до следующего отвода
+    private long nextIntervalMs;
 
-    // Целевые величины смещения (магнитуда выхода за полигон) и текущие применённые значения.
-    private float targetOffYaw, targetOffPitch;
-    private float appliedOffYaw, appliedOffPitch;
-    private float baseOffYaw, baseOffPitch; // смещение на момент начала возврата
+    // Целевая и текущая ДОЛЯ углового полуразмера по каждой оси (-1..+1, ±1 = кромка).
+    private float targetFracYaw, targetFracPitch;
+    private float appliedFracYaw, appliedFracPitch;
+    private float baseFracYaw, baseFracPitch;
 
-    private boolean justReturned;    // флаг завершённого цикла (для пересбора точки п.1)
+    private boolean justReturned;
 
     private final float[] out = new float[2];
 
     public void reset() {
         phase = Phase.IDLE;
-        appliedOffYaw = appliedOffPitch = 0f;
-        targetOffYaw = targetOffPitch = 0f;
-        baseOffYaw = baseOffPitch = 0f;
+        appliedFracYaw = appliedFracPitch = 0f;
+        targetFracYaw = targetFracPitch = 0f;
+        baseFracYaw = baseFracPitch = 0f;
         lastCycleEnd = System.currentTimeMillis();
         nextIntervalMs = computeNextInterval();
         justReturned = false;
     }
 
     /**
-     * Был ли только что завершён цикл отвода. Сбрасывается при чтении — используется
-     * вызывающей стороной, чтобы пересобрать точку многоточечного наведения для возврата.
+     * Был ли только что завершён цикл отвода. Сбрасывается при чтении — вызывающая сторона
+     * по нему пересобирает точку многоточечного наведения для возврата.
      */
     public boolean consumeJustReturned() {
         boolean v = justReturned;
@@ -72,77 +76,63 @@ public class TargetDesync implements QClient {
     }
 
     public boolean isDeviating() {
-        return phase == Phase.DEVIATE;
+        return phase == Phase.DEVIATE || phase == Phase.HOLD;
     }
 
     /** Динамический, апериодичный интервал между отводами (мс). */
     private long computeNextInterval() {
         ThreadLocalRandom r = ThreadLocalRandom.current();
-        // База + несколько несоизмеримых составляющих + случайный разброс => нет периодичности.
         double t = System.currentTimeMillis() / 1000.0;
-        double wobble = Math.sin(t * 0.53) * 140.0 + Math.cos(t * 1.27) * 90.0;
-        long base = 420 + (long) (r.nextDouble() * 980.0);
-        return Math.max(180L, (long) (base + wobble));
+        double wobble = Math.sin(t * 0.53) * 150.0 + Math.cos(t * 1.27) * 95.0;
+        long base = 380 + (long) (r.nextDouble() * 900.0);
+        return Math.max(160L, (long) (base + wobble));
     }
 
     /**
-     * Запускает фазу увода: выбирает случайное направление и магнитуду, выводящую вектор
-     * за границы полигона цели исходя из его угловых размеров на текущей дистанции.
+     * Запускает фазу ухода: выбирает случайное направление в плоскости и магнитуду
+     * (в долях полуразмера), выводящую вектор к самой кромке хитбокса.
      */
-    private void beginDeviation(LivingEntity target, float distance) {
+    private void beginDeviation() {
         ThreadLocalRandom r = ThreadLocalRandom.current();
 
-        Box box = target.getBoundingBox();
-        double halfW = Math.max(0.3, (box.maxX - box.minX) * 0.5);
-        double halfH = Math.max(0.4, (box.maxY - box.minY) * 0.5);
-
-        float dist = Math.max(0.8f, distance);
-
-        // Угловой полуразмер цели (в градусах) на текущей дистанции.
-        float angHalfYaw = (float) Math.toDegrees(Math.atan2(halfW, dist));
-        float angHalfPitch = (float) Math.toDegrees(Math.atan2(halfH, dist));
-
-        // ВНУТРИ полигона: 0.10..0.40 от полуразмера. Вектор остаётся НА цели (не за хитбоксом),
-        // иначе удар приходится "мимо взгляда" — мгновенный флаг анти-чита.
-        float inset = 0.10f + r.nextFloat() * 0.30f;
-
-        // Случайное направление в плоскости (угол) + лёгкая асимметрия по осям.
+        // Случайное направление в плоскости (yaw/pitch) + лёгкая эллиптичность (по pitch меньше).
         double dir = r.nextDouble() * Math.PI * 2.0;
-        float yawMag = (float) (Math.cos(dir) * angHalfYaw * inset);
-        float pitchMag = (float) (Math.sin(dir) * angHalfPitch * inset);
 
-        // Жёсткий предохранитель: микро-отвод не должен сводить прицел с цели.
-        targetOffYaw = MathHelper.clamp(yawMag, -3.0f, 3.0f);
-        targetOffPitch = MathHelper.clamp(pitchMag, -2.0f, 2.0f);
+        // До самой кромки: 0.55..0.96 полуразмера. ±1 — ровно грань хитбокса.
+        float reach = 0.55f + r.nextFloat() * 0.41f;
 
-        deviateDurationMs = 10 + r.nextInt(191);          // 10..200 мс
-        returnDurationMs = 60 + r.nextInt(141);           // 60..200 мс плавный возврат
+        targetFracYaw = MathHelper.clamp((float) (Math.cos(dir) * reach), -1.0f, 1.0f);
+        targetFracPitch = MathHelper.clamp((float) (Math.sin(dir) * reach * 0.85f), -1.0f, 1.0f);
 
-        baseOffYaw = appliedOffYaw;
-        baseOffPitch = appliedOffPitch;
+        deviateDurationMs = 40 + r.nextInt(121);   // 40..160 мс — резкий, но не телепортный уход
+        holdDurationMs = r.nextInt(91);            // 0..90 мс удержание у кромки
+        returnDurationMs = 70 + r.nextInt(151);    // 70..220 мс плавный возврат
+
+        baseFracYaw = appliedFracYaw;
+        baseFracPitch = appliedFracPitch;
 
         phase = Phase.DEVIATE;
         phaseStart = System.currentTimeMillis();
     }
 
     /**
-     * Обновляет состояние и возвращает текущее смещение углов {yawOffset, pitchOffset}.
+     * Обновляет состояние и возвращает текущее смещение в долях углового полуразмера
+     * {@code {fracYaw, fracPitch}} (диапазон −1..+1, где ±1 — кромка хитбокса).
      *
-     * @param target   цель
-     * @param distance дистанция до цели (метры)
-     * @param enabled  активна ли система отводов
+     * @param target  цель (для совместимости/будущих расширений)
+     * @param enabled активна ли система отводов
      */
-    public float[] update(LivingEntity target, float distance, boolean enabled) {
+    public float[] update(LivingEntity target, boolean enabled) {
         out[0] = 0f;
         out[1] = 0f;
 
         if (!enabled || target == null || mc.player == null) {
             // Плавно гасим возможный остаток смещения.
-            appliedOffYaw *= 0.6f;
-            appliedOffPitch *= 0.6f;
+            appliedFracYaw *= 0.6f;
+            appliedFracPitch *= 0.6f;
             phase = Phase.IDLE;
-            out[0] = appliedOffYaw;
-            out[1] = appliedOffPitch;
+            out[0] = appliedFracYaw;
+            out[1] = appliedFracPitch;
             return out;
         }
 
@@ -151,32 +141,39 @@ public class TargetDesync implements QClient {
         switch (phase) {
             case IDLE -> {
                 if (now - lastCycleEnd >= nextIntervalMs) {
-                    beginDeviation(target, distance);
+                    beginDeviation();
                 }
             }
             case DEVIATE -> {
                 float t = MathHelper.clamp((now - phaseStart) / (float) deviateDurationMs, 0f, 1f);
                 float curve = easeOutCubic(t);
-                appliedOffYaw = MathHelper.lerp(curve, baseOffYaw, targetOffYaw);
-                appliedOffPitch = MathHelper.lerp(curve, baseOffPitch, targetOffPitch);
+                appliedFracYaw = MathHelper.lerp(curve, baseFracYaw, targetFracYaw);
+                appliedFracPitch = MathHelper.lerp(curve, baseFracPitch, targetFracPitch);
 
                 if (t >= 1f) {
+                    phase = Phase.HOLD;
+                    phaseStart = now;
+                }
+            }
+            case HOLD -> {
+                appliedFracYaw = targetFracYaw;
+                appliedFracPitch = targetFracPitch;
+                if (now - phaseStart >= holdDurationMs) {
                     phase = Phase.RETURN;
                     phaseStart = now;
-                    baseOffYaw = appliedOffYaw;
-                    baseOffPitch = appliedOffPitch;
+                    baseFracYaw = appliedFracYaw;
+                    baseFracPitch = appliedFracPitch;
                 }
             }
             case RETURN -> {
                 float t = MathHelper.clamp((now - phaseStart) / (float) returnDurationMs, 0f, 1f);
                 float curve = easeInOut(t);
-                // Плавный возврат смещения к нулю -> базовая ротация снова на точке п.1.
-                appliedOffYaw = MathHelper.lerp(curve, baseOffYaw, 0f);
-                appliedOffPitch = MathHelper.lerp(curve, baseOffPitch, 0f);
+                appliedFracYaw = MathHelper.lerp(curve, baseFracYaw, 0f);
+                appliedFracPitch = MathHelper.lerp(curve, baseFracPitch, 0f);
 
                 if (t >= 1f) {
-                    appliedOffYaw = 0f;
-                    appliedOffPitch = 0f;
+                    appliedFracYaw = 0f;
+                    appliedFracPitch = 0f;
                     phase = Phase.IDLE;
                     lastCycleEnd = now;
                     nextIntervalMs = computeNextInterval();
@@ -185,25 +182,16 @@ public class TargetDesync implements QClient {
             }
         }
 
-        out[0] = appliedOffYaw;
-        out[1] = appliedOffPitch;
+        out[0] = appliedFracYaw;
+        out[1] = appliedFracPitch;
         return out;
     }
 
-    /** Плавный выход без "перелёта" — увод не выходит за пределы заданного смещения. */
+    /** Плавный выход без «перелёта» — уход не выходит за пределы заданного смещения. */
     private static float easeOutCubic(float t) {
         t = MathHelper.clamp(t, 0f, 1f);
         float p = 1f - t;
         return 1f - p * p * p;
-    }
-
-    /** Лёгкий "перелёт" за границу для естественного резкого увода. */
-    private static float easeOutBack(float t) {
-        t = MathHelper.clamp(t, 0f, 1f);
-        float c1 = 1.70158f;
-        float c3 = c1 + 1f;
-        float p = t - 1f;
-        return 1f + c3 * p * p * p + c1 * p * p;
     }
 
     private static float easeInOut(float t) {

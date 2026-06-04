@@ -1,6 +1,7 @@
 package fun.lumis.client.modules.impl.render.base.implement;
 
 import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.util.Identifier;
 import fun.lumis.Lumis;
 import fun.lumis.api.events.implement.EventRender;
 import fun.lumis.api.storages.implement.helpertstorages.enumvar.ModuleClass;
@@ -13,13 +14,18 @@ import fun.lumis.client.modules.impl.render.base.InterfaceProcessing;
 import java.awt.*;
 
 public class WaterMark extends InterfaceProcessing {
+    private static final Identifier LOGO_TEXTURE = Identifier.of("lumis", "textures/logo/logo.png");
     private boolean showFps = true;
     private boolean showMs = true;
     private boolean showServer = true;
     private boolean showTps = true;
 
     public static String getUsername() {
-        return "t.me/lumisclient";
+        fun.lumis.client.modules.impl.misc.NameProtect nameProtect = fun.lumis.client.modules.impl.misc.NameProtect.INSTANCE;
+        if (nameProtect.isEnable()) {
+            return nameProtect.getReplacementName();
+        }
+        return mc != null && mc.getSession() != null ? mc.getSession().getUsername() : "lumis";
     }
 
     public static String getUID() {
@@ -86,7 +92,7 @@ public class WaterMark extends InterfaceProcessing {
         int theme2 = ColorUtils.getThemeColor(120);
         int white = ColorUtils.rgba(255, 255, 255, 255);
 
-        String name = "lumis";
+        String name = getUsername();
 
         int fps = mc != null ? mc.getCurrentFps() : 0;
         int ping = 0;
@@ -106,16 +112,21 @@ public class WaterMark extends InterfaceProcessing {
         float pad = 6.0f;
         float barW = 2.0f;
         float h = 17.0f;
+        float logoSize = 12.0f;
+        float logoX = x + 3.0f + barW + 3.0f;
+        float logoY = y + (h - logoSize) / 2.0f;
         float nameW = titleFont.getStringWidth(name);
         float infoW = infoText.isEmpty() ? 0.0f : infoFont.getStringWidth(infoText);
         float sep = infoText.isEmpty() ? 0.0f : 6.0f;
-        float w = pad + barW + 4.0f + nameW + sep + infoW + pad;
+        float w = pad + barW + 3.0f + logoSize + 2.0f + nameW + sep + infoW + pad;
 
         RenderUtils.drawShadow(matrices, x, y, w, h, 4.0f, 9.0f, ColorUtils.setAlphaColor(theme, 80));
         RenderUtils.drawRoundedRect(matrices, x, y, w, h, 4.0f, ColorUtils.rgba(14, 14, 18, 205));
         RenderUtils.drawGradientRect(matrices, x + 3.0f, y + 3.0f, barW, h - 6.0f, 1.0f, theme, theme2);
 
-        float tx = x + 3.0f + barW + 4.0f;
+        RenderUtils.drawImage(matrices, LOGO_TEXTURE, logoX, logoY, logoSize, logoSize, theme);
+
+        float tx = logoX + logoSize + 2.0f;
         titleFont.drawGradientStringHorizontal(matrices, name, tx, y + 5.0f, theme, theme2);
         if (!infoText.isEmpty()) {
             infoFont.drawString(matrices, infoText, tx + nameW + sep, y + 6.4f, white);
@@ -129,7 +140,6 @@ public class WaterMark extends InterfaceProcessing {
         var matrices = eventRender.getContext().getMatrices();
         float x = draggable.getX();
         float y = draggable.getY();
-        var logoFont = Fonts.getFont("logo", 17);
         var iconNew14 = Fonts.getFont("iconnew", 14);
         var iconNew15 = Fonts.getFont("iconnew", 15);
         var icon14 = Fonts.getFont("icon", 14);
@@ -138,11 +148,10 @@ public class WaterMark extends InterfaceProcessing {
         var suisse13 = Fonts.getFont("suisse", 13);
 
         float lumisRectH = 16;
-        int iconSize = 17;
-        String iconGlyph = "A";
-        float iconW = logoFont.getStringWidth(iconGlyph);
-        float iconX = x + (17 - iconW) / 2;
-        float iconY = y + 5.5f;
+        int iconSize = 14;
+        float iconW = iconSize;
+        float iconX = x + 3;
+        float iconY = y + (lumisRectH - iconSize) / 2f;
         int iconTop;
         if (!Lumis.INSTANCE.themeStorage.getThemes().getTheme().getName().equals("Rainbow")) {
             iconTop = Lumis.INSTANCE.themeStorage.getThemes().getTheme().color[0];
@@ -168,9 +177,7 @@ public class WaterMark extends InterfaceProcessing {
         if (drawSquares) {
         }
 
-        int logoShadow = ColorUtils.applyAlpha(iconTop, 0.32f);
-        RenderUtils.drawShadow(matrices, iconX + 0.3f, iconY - 1.25f, iconW - 1, iconSize - 11, 3, 5f, logoShadow);
-        logoFont.drawGradientStringHorizontal(matrices, iconGlyph, iconX - 0.25f, iconY, iconTop, iconTop);
+        RenderUtils.drawImage(matrices, LOGO_TEXTURE, iconX, iconY, iconW, iconSize, iconTop);
         suisse13.drawString(matrices, brandText, brandTextX, textY, whiteColor);
 
         float rect2X = lumisRectX + lumisRectW + 2.5f;
@@ -262,7 +269,7 @@ public class WaterMark extends InterfaceProcessing {
         float rectBtmH = 15.85f;
 
         int iconSmallSize = 15;
-        float iconSmallW = iconNew15.getStringWidth(iconGlyph);
+        float iconSmallW = iconNew15.getStringWidth("n");
         float iconSmallY = rectBtmY + (rectBtmH - iconSmallSize) / 2f + 6.5f;
         float serverTextY = rectBtmY + (rectBtmH - 12f) / 2f + 4.8f;
         String serverDisplayName = formatServerNameForDisplay(serverName);
@@ -317,19 +324,24 @@ public class WaterMark extends InterfaceProcessing {
         float x = draggable.getX(), y = draggable.getY();
         var matrices = eventRender.getContext().getMatrices();
         var waveFont = Fonts.getFont("wave", 30);
-        String watermarkText = "Lumis";
+        String watermarkText = getUsername();
 
         int indexColor = ColorUtils.getThemeColor(90);
         int indexColor2 = ColorUtils.getThemeColor(180);
         int indexColor3 = ColorUtils.getThemeColor(270);
         int indexColor4 = ColorUtils.getColor(360);
-        float glowWidth = 95.0f + waveFont.getStringWidth("ful");
 
-        RenderUtils.drawShadow(matrices, x, y, glowWidth, 12, 10, 15, indexColor4, indexColor2, indexColor, indexColor3);
-        waveFont.drawGradientStringHorizontal(matrices, watermarkText, x, y, indexColor, indexColor2);
+        float logoSize = 22.0f;
+        float logoY = y - 2.0f;
+        float textX = x + logoSize + 4.0f;
+        float glowWidth = logoSize + 4.0f + 95.0f + waveFont.getStringWidth("ful");
 
-        draggable.setWidth(Math.max(glowWidth, waveFont.getStringWidth(watermarkText)));
-        draggable.setHeight(12);
+        RenderUtils.drawShadow(matrices, x, logoY, glowWidth, logoSize + 4, 10, 15, indexColor4, indexColor2, indexColor, indexColor3);
+        RenderUtils.drawImage(matrices, LOGO_TEXTURE, x, logoY, logoSize, logoSize, indexColor2);
+        waveFont.drawGradientStringHorizontal(matrices, watermarkText, textX, y, indexColor, indexColor2);
+
+        draggable.setWidth(Math.max(glowWidth, logoSize + 4.0f + waveFont.getStringWidth(watermarkText)));
+        draggable.setHeight(Math.max(logoSize + 4, 12));
     }
 
     private void drawServerNameWithThemeParts(MatrixStack matrices, String serverName, float x, float y, int themeColor, int whiteColor) {
