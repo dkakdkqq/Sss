@@ -25,7 +25,7 @@ import java.util.Map;
 public class ConfigStorage {
 
     public String currentConfig = "default";
-    private final String extension = ".wonder";
+    private final String extension = ".lumis";
 
     public ConfigStorage() {
         loadAll();
